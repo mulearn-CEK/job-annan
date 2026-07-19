@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Scraper output (regenerated on every run)
+jobs.json
+scrapers/jobs.json
+
+# Debug artifacts from --debug runs
+screenshot.png
+rendered_page.html
+scrapers/screenshot.png
+scrapers/rendered_page.html
+cyberpark_debug.png
+cyberpark_debug.html
+
+# Local secrets, if you ever put them in a file
+.env
+
+# Claude Code local settings
+.claude/settings.local.json
