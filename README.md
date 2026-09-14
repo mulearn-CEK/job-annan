@@ -1,6 +1,11 @@
-# Kerala IT Park Job Scraper → Notion (Placement Cell Portal)
+# Kerala IT Park Job Scraper → job-board
 
-Scrapes job listings daily from **Technopark**, **Infopark**, and **Cyberpark**, and syncs them into a single Notion database — set up as one landing page with 3 filtered sub-pages, one per IT Park, plus role-based filtering for students.
+Scrapes job listings daily from **Technopark**, **Infopark**, and **Cyberpark**, classifies each job's role type and experience level, and writes them to `jobs.json`. That file is published straight into the [`job-board`](../job-board) site's `public/data/jobs.json` (no backend, no database) — the site reads it directly and renders filterable job cards.
+
+> `notion_sync.py` (syncing into a Notion database) is no longer part of the
+> default pipeline — it's kept in the repo as a legacy/optional path, but
+> `daily-scrape.yml` no longer calls it. See "Legacy: Notion sync" below if
+> you still want it.
 
 ## How each site is scraped
 
@@ -25,11 +30,36 @@ python scrapers/infopark.py             # prints first 5 jobs to check
 python scrapers/cyberpark.py --debug    # saves cyberpark_debug.png + .html if it finds nothing
 ```
 
-## Notion structure (recommended)
+## Classification
 
-**Don't create separate databases per IT Park or per company** — one database with filtered *views* is far easier to maintain and keeps automation simple (the scraper only ever writes to one place).
+Every job in `jobs.json` gets two derived fields the job-board site filters on:
+- `role_type` — `scrapers/role_classifier.py`: Software Development, QA / Testing, DevOps / Cloud / Sysadmin, Data / AI / ML, Design / UI-UX, Technical Support, Business / Sales / Marketing, HR / Admin / Finance, Project / Product Management, Internship / Trainee, Other.
+- `experience_level` — `scrapers/experience_classifier.py`: Fresher, Intermediate, Senior (keyword-based off the title; defaults to Intermediate when no signal is present).
 
-### 1. One database: `Job Listings`
+## Setup steps
+
+1. **Local test**:
+   ```bash
+   python main.py          # runs all 3 scrapers → writes jobs.json
+   ```
+2. **GitHub Actions** (daily automation):
+   - Push this repo to GitHub.
+   - To auto-publish into the job-board site repo, add:
+     - Repo **variable** `JOB_BOARD_REPO` = `owner/job-board`
+     - Repo **secret** `JOB_BOARD_REPO_TOKEN` = a PAT with push access to that repo
+   - `.github/workflows/daily-scrape.yml` runs `main.py` daily at 8:30 AM IST (adjust the cron if needed) and, if those are set, commits the fresh `jobs.json` straight into `job-board/public/data/jobs.json`. Without them, it still scrapes and produces `jobs.json` as a build artifact — you just have to copy it over yourself.
+
+## Deduplication
+
+Each job gets a `job_id` (the site's own stable ID when available, e.g. Technopark's `job_listing_id`, otherwise a hash of title + company + link). `main.py` de-dupes across all three sources by `job_id` before writing `jobs.json`, so re-running daily doesn't create duplicate entries.
+
+## Legacy: Notion sync
+
+`notion_sync.py` and the Notion database structure described below still work if you want a second, human-curated view (e.g. for a placement cell to mark jobs "Reviewed" / "Shared with students") — just run it manually, it's no longer wired into `daily-scrape.yml`.
+
+**Don't create separate databases per IT Park or per company** — one database with filtered *views* is far easier to maintain.
+
+### One database: `Job Listings`
 Properties:
 - `Job Title` (Title)
 - `Company` (Text)
@@ -39,42 +69,16 @@ Properties:
 - `Apply Link` (URL)
 - `Description` (Text)
 - `IT Park` (Select: Technopark / Infopark / Cyberpark)
-- `Role Type` (Select — option names must match `scrapers/role_classifier.py` exactly, or Notion will auto-create duplicate options: `Software Development`, `QA / Testing`, `Design / UI-UX`, `Data / AI / ML`, `DevOps / Cloud / Sysadmin`, `Technical Support`, `Business / Sales / Marketing`, `HR / Admin / Finance`, `Internship / Trainee`, `Project / Product Management`, `Other`)
+- `Role Type` (Select — option names must match `scrapers/role_classifier.py` exactly, or Notion will auto-create duplicate options)
 - `Status` (Select: New / Reviewed / Shared with students)
 - `Job ID` (Text — hidden dedup key, don't edit manually)
 
-### 2. Landing page → 3 sub-pages
-Create a landing page, and inside it 3 **linked views** of the same database (Notion: "+ Add a page inside" → "Existing database" or embed a **Linked view of `Job Listings`**), one per IT Park:
-- `Technopark` sub-page → filter `IT Park = Technopark`
-- `Infopark` sub-page → filter `IT Park = Infopark`
-- `Cyberpark` sub-page → filter `IT Park = Cyberpark`
-
-### 3. Inside each IT Park sub-page, add more views instead of nesting company pages
-- **Board view** grouped by `Company` — behaves like company folders, updates itself automatically as new companies post jobs.
-- **Board view** grouped by `Role Type` — the filter students actually need ("show me only Dev roles" / "only Internships").
-- **Table view** with visible filter/sort controls (Location, Deadline, Status) for students to adjust live.
-
-This way, adding new IT Parks later (say a 4th park) is just: add one more Select option + one more filtered view — no schema changes, no new databases.
-
-## Setup steps
-
-1. **Notion integration**: https://www.notion.so/my-integrations → New integration → copy the secret.
-2. **Create the database** as above, share it with your integration (`...` menu → Connections).
-3. **Local test**:
-   ```bash
-   export NOTION_TOKEN="your_integration_secret"
-   export NOTION_DATABASE_ID="your_database_id"
-   python main.py          # runs all 3 scrapers → writes jobs.json
-   python notion_sync.py   # pushes new jobs into Notion
-   ```
-4. **GitHub Actions** (daily automation):
-   - Push this repo to GitHub (private repo recommended).
-   - Settings → Secrets and variables → Actions → add `NOTION_TOKEN` and `NOTION_DATABASE_ID`.
-   - `.github/workflows/daily-scrape.yml` runs `main.py` + `notion_sync.py` daily at 8:30 AM IST (adjust the cron if needed), and can also be triggered manually from the Actions tab.
-
-## Deduplication
-
-Each job gets a `job_id` (hash of title + company + link). `notion_sync.py` checks Notion for an existing page with that ID before creating a new one — so re-running daily only adds genuinely new postings, and doesn't touch `Status` on ones your team already reviewed.
+Run it with:
+```bash
+export NOTION_TOKEN="your_integration_secret"
+export NOTION_DATABASE_ID="your_database_id"
+python notion_sync.py
+```
 
 ## If one site's scraper breaks
 

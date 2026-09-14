@@ -1,4 +1,4 @@
-name: Daily Technopark Job Scrape
+name: Daily Kerala IT Park Job Scrape
 
 on:
   schedule:
@@ -7,10 +7,10 @@ on:
   workflow_dispatch: {}   # lets you also trigger it manually from the Actions tab
 
 jobs:
-  scrape-and-sync:
+  scrape-and-publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repo
+      - name: Check out scraper repo
         uses: actions/checkout@v5
 
       - name: Set up Python
@@ -26,8 +26,32 @@ jobs:
       - name: Run all scrapers
         run: python main.py
 
-      - name: Sync to Notion
-        env:
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-        run: python notion_sync.py
+      # Publishes jobs.json straight into the job-board site repo's static
+      # data folder and commits — no backend, no Notion. Requires:
+      #   - secret JOB_BOARD_REPO_TOKEN: a PAT (repo scope) with push access
+      #     to the job-board repo
+      #   - variable JOB_BOARD_REPO: "owner/job-board" (Settings → Secrets
+      #     and variables → Actions → Variables)
+      - name: Check out job-board repo
+        if: ${{ vars.JOB_BOARD_REPO != '' }}
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.JOB_BOARD_REPO }}
+          token: ${{ secrets.JOB_BOARD_REPO_TOKEN }}
+          path: job-board
+
+      - name: Publish jobs.json to job-board
+        if: ${{ vars.JOB_BOARD_REPO != '' }}
+        run: |
+          mkdir -p job-board/public/data
+          cp jobs.json job-board/public/data/jobs.json
+          cd job-board
+          git config user.name "job-annan-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add public/data/jobs.json
+          if git diff --cached --quiet; then
+            echo "No changes to jobs.json, nothing to commit."
+          else
+            git commit -m "chore: update jobs.json ($(date -u +%Y-%m-%d))"
+            git push
+          fi

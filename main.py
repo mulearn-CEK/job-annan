@@ -13,6 +13,7 @@ from pathlib import Path
 
 from scrapers import technopark, infopark, cyberpark
 from scrapers.role_classifier import classify_role
+from scrapers.experience_classifier import classify_experience
 
 OUTPUT_FILE = Path(__file__).parent / "jobs.json"
 
@@ -48,6 +49,7 @@ def main():
     for job in all_jobs:
         job["job_id"] = ensure_job_id(job)
         job["role_type"] = classify_role(job.get("title", ""))
+        job["experience_level"] = classify_experience(job.get("title", ""))
         seen[job["job_id"]] = job  # de-dupe across all sources by job_id
 
     jobs = list(seen.values())
